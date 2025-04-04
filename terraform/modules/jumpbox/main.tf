@@ -112,11 +112,17 @@ resource "aws_instance" "jumpbox" {
     delete_on_termination = true
   }
 
-  user_data = templatefile("${path.module}/templates/jumpbox_setup.sh.tpl", {
-    vault_ip         = var.vault_ip
-    vault_ca_pub_key = var.vault_ca_pub_key
-    environment      = var.environments[count.index]
-  })
+  user_data = join("\n", [
+    templatefile("${path.module}/templates/jumpbox_setup.sh.tpl", {
+      vault_ip         = var.vault_ip
+      vault_ca_pub_key = var.vault_ca_pub_key
+      environment      = var.environments[count.index]
+    }),
+    templatefile("${path.module}/templates/promtail_setup.sh.tpl", {
+      logging_server_ip = var.logging_server_ip
+      index             = count.index
+    })
+  ])
 
   tags = {
     Name        = "${var.name}-${var.environments[count.index]}"

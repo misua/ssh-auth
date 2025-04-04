@@ -39,3 +39,8 @@ variable "environments" {
   type        = list(string)
   default     = ["dev", "staging", "prod"]
 }
+
+variable "logging_server_ip" {
+  description = "IP address of the Loki logging server"
+  type        = string
+}

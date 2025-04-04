@@ -95,9 +95,14 @@ resource "aws_instance" "vault" {
     delete_on_termination = true
   }
 
-  user_data = templatefile("${path.module}/templates/vault_setup.sh.tpl", {
-    environments = var.environments
-  })
+  user_data = join("\n", [
+    templatefile("${path.module}/templates/vault_setup.sh.tpl", {
+      environments = var.environments
+    }),
+    templatefile("${path.module}/templates/promtail_setup.sh.tpl", {
+      logging_server_ip = var.logging_server_ip
+    })
+  ])
 
   tags = {
     Name = var.name
