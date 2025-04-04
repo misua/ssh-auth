@@ -140,6 +140,19 @@ if [ -z "$SIGNED_KEY" ] || [ "$SIGNED_KEY" = "null" ]; then
     exit 1
 fi
 
+# Log certificate issuance
+if command -v log-ssh-cert &> /dev/null; then
+    # If the log-ssh-cert script is available (on Vault server), use it
+    log-ssh-cert "$VAULT_USER" "$ENVIRONMENT" "$VALID_PRINCIPALS" "$TTL"
+else
+    # Otherwise log locally
+    LOG_DIR="$HOME/.ssh/cert_logs"
+    mkdir -p "$LOG_DIR"
+    LOG_FILE="$LOG_DIR/ssh_cert_issuance.log"
+    TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+    echo "$TIMESTAMP - Certificate issued: User=$VAULT_USER, Env=$ENVIRONMENT, Principals=$VALID_PRINCIPALS, TTL=$TTL, SourceIP=$(hostname -I | awk '{print $1}')" >> "$LOG_FILE"
+fi
+
 # Save the signed key
 echo "$SIGNED_KEY" > "$SSH_CERT_PATH"
 chmod 644 "$SSH_CERT_PATH"

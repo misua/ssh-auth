@@ -53,6 +53,27 @@ resource "aws_iam_role" "vault" {
   })
 }
 
+# IAM policy for CloudWatch logging
+resource "aws_iam_role_policy" "vault_cloudwatch" {
+  name   = "${var.name}-cloudwatch-policy"
+  role   = aws_iam_role.vault.id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogStreams"
+        ],
+        Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
+
 # IAM instance profile for Vault server
 resource "aws_iam_instance_profile" "vault" {
   name = "${var.name}-instance-profile"

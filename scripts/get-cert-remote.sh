@@ -140,6 +140,19 @@ if [ -z "\$SIGNED_KEY" ] || [ "\$SIGNED_KEY" = "null" ]; then
     exit 1
 fi
 
+# Log certificate issuance
+if command -v log-ssh-cert &> /dev/null; then
+    # If the log-ssh-cert script is available (on Vault server), use it
+    log-ssh-cert "$VAULT_USER" "$ENVIRONMENT" "$ENVIRONMENT-admin" "$TTL"
+else
+    # Otherwise log locally
+    LOG_DIR="\$HOME/.ssh/cert_logs"
+    mkdir -p "\$LOG_DIR"
+    LOG_FILE="\$LOG_DIR/ssh_cert_issuance.log"
+    TIMESTAMP=\$(date +"%Y-%m-%d %H:%M:%S")
+    echo "\$TIMESTAMP - Certificate issued: User=$VAULT_USER, Env=$ENVIRONMENT, Principals=$ENVIRONMENT-admin, TTL=$TTL, SourceIP=\$(hostname -I | awk '{print \$1}'), RequestedFrom=$(hostname -I | awk '{print $1}')" >> "\$LOG_FILE"
+fi
+
 # Save the signed key
 echo "\$SIGNED_KEY" > /tmp/signed_cert.pub
 echo "Certificate generated successfully!"
@@ -150,6 +163,13 @@ ssh-keygen -L -f /tmp/signed_cert.pub
 EOF
 
 chmod +x $TEMP_SCRIPT
+
+# Log locally that we're requesting a certificate
+LOG_DIR="$HOME/.ssh/cert_logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/ssh_cert_requests.log"
+TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+echo "$TIMESTAMP - Certificate requested: User=$VAULT_USER, Env=$ENVIRONMENT, TTL=$TTL, JumpboxIP=$JUMPBOX_IP, LocalIP=$(hostname -I | awk '{print $1}')" >> "$LOG_FILE"
 
 echo "Connecting to jumpbox and signing your SSH key..."
 echo "This may take a moment..."

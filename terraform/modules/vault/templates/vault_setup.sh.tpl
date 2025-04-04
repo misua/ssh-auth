@@ -24,11 +24,16 @@ listener "tcp" {
 
 api_addr = "http://$(hostname -I | awk '{print $1}'):8200"
 ui = true
+
+# Log configuration
+log_level = "info"
 EOF
 
 # Create data directories
 mkdir -p /opt/vault/data
+mkdir -p /var/log/vault
 chown -R vault:vault /opt/vault
+chown -R vault:vault /var/log/vault
 
 # Start Vault service
 systemctl enable vault
@@ -50,6 +55,36 @@ vault operator unseal $UNSEAL_KEY
 
 # Set token for subsequent operations
 export VAULT_TOKEN=$VAULT_TOKEN
+
+# Enable audit logging
+vault audit enable file file_path=/var/log/vault/audit.log
+
+# Install CloudWatch agent for centralized logging
+apt-get install -y amazon-cloudwatch-agent
+
+# Configure CloudWatch agent
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << EOF
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/vault/audit.log",
+            "log_group_name": "vault-audit-logs",
+            "log_stream_name": "{instance_id}-audit",
+            "retention_in_days": 30
+          }
+        ]
+      }
+    }
+  }
+}
+EOF
+
+# Start CloudWatch agent
+systemctl enable amazon-cloudwatch-agent
+systemctl start amazon-cloudwatch-agent
 
 # Enable userpass authentication
 vault auth enable userpass
@@ -74,6 +109,23 @@ vault write ssh-client-signer/config/ca generate_signing_key=true
 
 # Get SSH CA public key
 vault read -field=public_key ssh-client-signer/config/ca > /etc/ssh/trusted-user-ca-key.pub
+
+# Create SSH certificate issuance logging script
+cat > /usr/local/bin/log-ssh-cert << 'EOF'
+#!/bin/bash
+# Log SSH certificate issuance
+
+LOG_FILE="/var/log/vault/ssh-certs.log"
+TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+USERNAME="$1"
+ENVIRONMENT="$2"
+PRINCIPALS="$3"
+TTL="$4"
+
+echo "$TIMESTAMP - Certificate issued: User=$USERNAME, Env=$ENVIRONMENT, Principals=$PRINCIPALS, TTL=$TTL" >> $LOG_FILE
+EOF
+
+chmod +x /usr/local/bin/log-ssh-cert
 
 # Create roles for different environments
 %{ for env in environments ~}

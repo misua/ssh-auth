@@ -5,6 +5,9 @@ set -e
 apt-get update
 apt-get install -y curl jq unzip
 
+# Install CloudWatch agent for centralized logging
+apt-get install -y amazon-cloudwatch-agent
+
 # Configure SSH to trust the CA
 echo "${vault_ca_pub_key}" > /etc/ssh/trusted-user-ca-key.pub
 chmod 644 /etc/ssh/trusted-user-ca-key.pub
@@ -28,6 +31,50 @@ cat > /etc/ssh/sshd_config.d/principals.conf << EOF
 # Authorized principals configuration
 AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
 EOF
+
+# Configure enhanced SSH logging
+cat > /etc/ssh/sshd_config.d/logging.conf << EOF
+# Enhanced SSH logging configuration
+LogLevel VERBOSE
+SyslogFacility AUTH
+PrintLastLog yes
+
+# Log all accepted and rejected connections
+AcceptEnv LANG LC_*
+PrintMotd no
+
+# Enable audit logging for SSH sessions
+Subsystem sftp /usr/lib/openssh/sftp-server -f AUTHPRIV -l INFO
+EOF
+
+# Configure CloudWatch agent for SSH logs
+mkdir -p /opt/aws/amazon-cloudwatch-agent/etc
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << EOF
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/auth.log",
+            "log_group_name": "ssh-auth-logs",
+            "log_stream_name": "{instance_id}-auth",
+            "retention_in_days": 30
+          }
+        ]
+      }
+    }
+  }
+}
+EOF
+
+# Start CloudWatch agent
+systemctl enable amazon-cloudwatch-agent
+systemctl start amazon-cloudwatch-agent
+
+# Create SSH certificate logs directory
+mkdir -p /var/log/ssh-certs
+chmod 755 /var/log/ssh-certs
 
 # Set proper permissions
 chmod 755 /etc/ssh/auth_principals
@@ -96,8 +143,7 @@ SIGN_RESULT=$$(curl -s \
     --data "{
         \\"public_key\\": \\"$SSH_PUB_KEY_CONTENT\\",
         \\"valid_principals\\": \\"${environment}-admin\\",
-        \\"ttl\\": \\"$TTL\\",
-        \\"key_id\\": \\"$USERNAME@${environment}\\"
+        \\"ttl\\": \\"$TTL\\"
     }" \
     $VAULT_ADDR/v1/ssh-client-signer/sign/${environment})
 
@@ -108,6 +154,12 @@ if [ "$SIGNED_KEY" = "null" ]; then
     echo "Failed to sign key. Error: $$(echo $SIGN_RESULT | jq -r '.errors')"
     exit 1
 fi
+
+# Log certificate issuance
+LOG_DIR="/var/log/ssh-certs"
+LOG_FILE="$LOG_DIR/issuance.log"
+TIMESTAMP=$$(date +"%Y-%m-%d %H:%M:%S")
+echo "$TIMESTAMP - Certificate issued: User=$VAULT_USER, Env=${environment}, Principals=${environment}-admin, TTL=$TTL, SourceIP=$$(hostname -I | awk '{print \$1}')" | sudo tee -a $LOG_FILE > /dev/null
 
 # Save the signed key
 CERT_FILE="$${SSH_PUB_KEY/.pub/-${environment}-cert.pub}"
