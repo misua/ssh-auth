@@ -1,0 +1,6 @@
+{
+  "permit-pty": "",
+  "permit-user-rc": "",
+  "no-port-forwarding": "",
+  "no-x11-forwarding": ""
+}
