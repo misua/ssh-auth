@@ -122,6 +122,7 @@ resource "aws_instance" "jumpbox" {
       logging_server_ip = var.logging_server_ip
       index             = count.index
       environment       = var.environments[count.index]
+      PROMTAIL_VERSION  = "2.8.0"
     })
   ])
 

@@ -100,7 +100,8 @@ resource "aws_instance" "vault" {
       environments = var.environments
     }),
     templatefile("${path.module}/templates/promtail_setup.sh.tpl", {
-      logging_server_ip = var.logging_server_ip
+      logging_server_ip = var.logging_server_ip,
+      PROMTAIL_VERSION = "2.8.0"
     })
   ])
 

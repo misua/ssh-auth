@@ -12,7 +12,10 @@ resource "aws_instance" "logging" {
     delete_on_termination = true
   }
 
-  user_data = templatefile("${path.module}/templates/logging_setup.sh.tpl", {})
+  # User data script to set up Loki and Grafana
+  user_data = templatefile("${path.module}/templates/logging_setup.sh.tpl", {
+    COMPOSE_VERSION = "1.29.2"
+  })
 
   tags = {
     Name = "${var.environment}-logging"
