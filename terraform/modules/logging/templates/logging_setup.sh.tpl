@@ -1,17 +1,57 @@
 #!/bin/bash
 set -e
 
-# Install Docker and Docker Compose
+# Update system first
 apt-get update
-apt-get install -y apt-transport-https ca-certificates curl software-properties-common
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+apt-get upgrade -y
+apt-get install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
+
+# Install Docker with robust error handling
+echo "Installing Docker..."
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
 apt-get update
 apt-get install -y docker-ce docker-ce-cli containerd.io
 
-# Install Docker Compose
-curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+# Verify Docker installation
+if ! docker --version; then
+  echo "Docker installation failed, attempting alternative method..."
+  apt-get remove docker docker-engine docker.io containerd runc -y || true
+  apt-get update
+  apt-get install -y docker.io
+  systemctl enable --now docker
+  
+  if ! docker --version; then
+    echo "All Docker installation methods failed. Exiting."
+    exit 1
+  fi
+fi
+
+echo "Docker successfully installed: $(docker --version)"
+
+# Install Docker Compose with robust error handling
+echo "Installing Docker Compose..."
+COMPOSE_VERSION="1.29.2"
+curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 chmod +x /usr/local/bin/docker-compose
+
+# Verify Docker Compose installation
+if ! docker-compose --version; then
+  echo "Docker Compose installation failed, attempting pip method..."
+  apt-get install -y python3-pip
+  pip3 install docker-compose
+  
+  if ! docker-compose --version; then
+    echo "All Docker Compose installation methods failed. Exiting."
+    exit 1
+  fi
+fi
+
+echo "Docker Compose successfully installed: $(docker-compose --version)"
 
 # Create directories for Loki and Grafana
 mkdir -p /opt/loki/config

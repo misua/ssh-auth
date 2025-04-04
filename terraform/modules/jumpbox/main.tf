@@ -121,6 +121,7 @@ resource "aws_instance" "jumpbox" {
     templatefile("${path.module}/templates/promtail_setup.sh.tpl", {
       logging_server_ip = var.logging_server_ip
       index             = count.index
+      environment       = var.environments[count.index]
     })
   ])
 

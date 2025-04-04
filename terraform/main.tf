@@ -18,6 +18,11 @@ module "logging" {
   key_name     = var.ssh_key_name
 }
 
+# Set up local variable for logging server IP to avoid circular dependencies
+locals {
+  logging_server_ip = module.logging.private_ip
+}
+
 # Deploy Vault server
 module "vault" {
   source          = "./modules/vault"
@@ -27,7 +32,9 @@ module "vault" {
   instance_type   = var.vault_instance_type
   key_name        = var.ssh_key_name
   environments    = var.environments
-  logging_server_ip = module.logging.private_ip
+  logging_server_ip = local.logging_server_ip
+  
+  depends_on = [module.logging]
 }
 
 # Deploy jumpbox hosts
@@ -41,5 +48,7 @@ module "jumpbox" {
   vault_ip           = module.vault.private_ip
   vault_ca_pub_key   = module.vault.ssh_ca_public_key
   environments       = var.environments
-  logging_server_ip  = module.logging.private_ip
+  logging_server_ip  = local.logging_server_ip
+  
+  depends_on = [module.logging, module.vault]
 }
