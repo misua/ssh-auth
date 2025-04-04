@@ -35,7 +35,7 @@ echo "Docker successfully installed: $(docker --version)"
 
 # Install Docker Compose with robust error handling
 echo "Installing Docker Compose..."
-COMPOSE_VERSION="1.29.2"
+COMPOSE_VERSION="2.8.0"
 curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 chmod +x /usr/local/bin/docker-compose
 
@@ -53,23 +53,38 @@ fi
 
 echo "Docker Compose successfully installed: $(docker-compose --version)"
 
-# Create directories for Loki and Grafana
+# Create directories for Loki and Grafana with proper permissions
 mkdir -p /opt/loki/config
+mkdir -p /opt/loki/data/chunks
+mkdir -p /opt/loki/data/index
 mkdir -p /opt/grafana/data
+mkdir -p /opt/grafana/provisioning/datasources
+mkdir -p /opt/grafana/provisioning/dashboards
+mkdir -p /opt/grafana/dashboards
 mkdir -p /opt/promtail/config
+
+# Set proper permissions for Grafana and Loki
+# Grafana runs as user 472
+chown -R 472:472 /opt/grafana/data
+chmod -R 755 /opt/grafana/data
+
+# Create temporary directories with proper permissions for Loki
+mkdir -p /tmp/loki/index /tmp/loki/chunks
+chmod -R 777 /tmp/loki
 
 # Create docker-compose.yml file
 cat > /opt/docker-compose.yml << EOF
 version: '3'
 services:
   loki:
-    image: grafana/loki:2.8.0
+    image: grafana/loki:${COMPOSE_VERSION}
     container_name: loki
+    user: "10001"
     ports:
       - "3100:3100"
     volumes:
       - /opt/loki/config:/etc/loki
-      - /opt/loki/data:/loki
+      - /tmp/loki:/tmp/loki
     command: -config.file=/etc/loki/loki-config.yaml
     restart: unless-stopped
     networks:
@@ -78,6 +93,7 @@ services:
   grafana:
     image: grafana/grafana:9.5.2
     container_name: grafana
+    user: "472"
     ports:
       - "3000:3000"
     volumes:
@@ -98,7 +114,7 @@ networks:
   loki:
 EOF
 
-# Create Loki configuration
+# Create Loki configuration with simplified setup
 cat > /opt/loki/config/loki-config.yaml << EOF
 auth_enabled: false
 
@@ -113,36 +129,33 @@ ingester:
         store: inmemory
       replication_factor: 1
     final_sleep: 0s
-  chunk_idle_period: 5m
+  chunk_idle_period: 1h
+  max_chunk_age: 1h
+  chunk_target_size: 1048576
   chunk_retain_period: 30s
 
 schema_config:
   configs:
-    - from: 2020-05-15
-      store: boltdb
+    - from: 2020-10-24
+      store: boltdb-shipper
       object_store: filesystem
       schema: v11
       index:
         prefix: index_
-        period: 168h
+        period: 24h
 
 storage_config:
-  boltdb:
-    directory: /tmp/loki/index
+  boltdb_shipper:
+    active_index_directory: /tmp/loki/index
+    cache_location: /tmp/loki/chunks
+    cache_ttl: 24h
+    shared_store: filesystem
   filesystem:
     directory: /tmp/loki/chunks
 
 limits_config:
-  enforce_metric_name: false
   reject_old_samples: true
   reject_old_samples_max_age: 168h
-
-chunk_store_config:
-  max_look_back_period: 0s
-
-table_manager:
-  retention_deletes_enabled: false
-  retention_period: 0s
 EOF
 
 # Create Promtail configuration (log collector)
@@ -183,11 +196,6 @@ scrape_configs:
           __path__: /var/log/ssh-certs/*.log
 EOF
 
-# Configure Grafana dashboard provisioning
-mkdir -p /opt/grafana/provisioning/datasources
-mkdir -p /opt/grafana/provisioning/dashboards
-mkdir -p /opt/grafana/dashboards
-
 # Create datasource provisioning
 cat > /opt/grafana/provisioning/datasources/loki.yaml << EOF
 apiVersion: 1
@@ -205,330 +213,54 @@ cat > /opt/grafana/provisioning/dashboards/ssh-ca.yaml << EOF
 apiVersion: 1
 
 providers:
-  - name: 'SSH CA Dashboards'
+  - name: 'SSH CA Dashboard'
     orgId: 1
-    folder: 'SSH CA'
+    folder: 'SSH'
     type: file
     disableDeletion: false
     updateIntervalSeconds: 10
     allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards
-      foldersFromFilesStructure: true
 EOF
 
-# Create SSH CA dashboard directory
-mkdir -p /opt/grafana/dashboards/ssh-ca
+# Copy the SSH CA dashboard JSON to Grafana
+cp /opt/grafana/dashboards/ssh-ca-dashboard.json /opt/grafana/dashboards/
 
-# Create SSH CA Dashboard
-cat > /opt/grafana/dashboards/ssh-ca-dashboard.json << EOF
-{
-  "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": "-- Grafana --",
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
-  },
-  "editable": true,
-  "gnetId": null,
-  "graphTooltip": 0,
-  "id": 1,
-  "links": [],
-  "panels": [
-    {
-      "datasource": "Loki",
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 0
-      },
-      "id": 2,
-      "options": {
-        "showLabels": false,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": false
-      },
-      "targets": [
-        {
-          "expr": "{job=\"ssh_certs\"}",
-          "refId": "A"
-        }
-      ],
-      "title": "SSH Certificate Issuance",
-      "type": "logs"
-    },
-    {
-      "datasource": "Loki",
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 0
-      },
-      "id": 4,
-      "options": {
-        "showLabels": false,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": false
-      },
-      "targets": [
-        {
-          "expr": "{job=\"ssh\"} |= \"Failed password\" or {job=\"ssh\"} |= \"authentication failure\"",
-          "refId": "A"
-        }
-      ],
-      "title": "Failed SSH Authentication",
-      "type": "logs"
-    },
-    {
-      "datasource": "Loki",
-      "description": "",
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      },
-      "id": 6,
-      "options": {
-        "showLabels": false,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": false
-      },
-      "targets": [
-        {
-          "expr": "{job=\"ssh\"} |= \"Accepted publickey\"",
-          "refId": "A"
-        }
-      ],
-      "title": "Successful SSH Logins",
-      "type": "logs"
-    },
-    {
-      "datasource": "Loki",
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
-      },
-      "id": 8,
-      "options": {
-        "showLabels": false,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": false
-      },
-      "targets": [
-        {
-          "expr": "{job=\"vault_audit\"}",
-          "refId": "A"
-        }
-      ],
-      "title": "Vault Audit Logs",
-      "type": "logs"
-    }
-  ],
-  "refresh": "10s",
-  "schemaVersion": 27,
-  "style": "dark",
-  "tags": [
-    "ssh",
-    "vault",
-    "ca"
-  ],
-  "templating": {
-    "list": []
-  },
-  "time": {
-    "from": "now-6h",
-    "to": "now"
-  },
-  "timepicker": {
-    "refresh_intervals": [
-      "5s",
-      "10s",
-      "30s",
-      "1m",
-      "5m",
-      "15m",
-      "30m",
-      "1h",
-      "2h",
-      "1d"
-    ]
-  },
-  "timezone": "",
-  "title": "SSH CA Monitoring",
-  "uid": "ssh-ca-dashboard",
-  "version": 1
-}
-EOF
-
-# Start the services
+# Start the containers using docker-compose
 cd /opt
 docker-compose up -d
 
-# Create a script to configure Grafana with dashboards
-cat > /opt/setup-grafana.sh << 'EOF'
+# Add a user to run the logging services
+useradd -m -s /bin/bash logging
+
+# Wait for services to initialize
+echo "Waiting 30s for Grafana to initialize..."
+sleep 30
+
+# Enable and configure firewall
+apt-get install -y ufw
+ufw allow ssh
+ufw allow 3000/tcp comment 'Grafana'
+ufw allow 3100/tcp comment 'Loki'
+ufw --force enable
+
+# Create a simple script to check the status of the logging services
+cat > /usr/local/bin/check-logging-status << EOF
 #!/bin/bash
-
-# Wait for Grafana to be ready
-echo "Waiting for Grafana to start..."
-until $(curl --output /dev/null --silent --head --fail http://localhost:3000); do
-    printf '.'
-    sleep 5
-done
-
-# Add Loki as a data source
-echo "Configuring Loki data source..."
-curl -X POST -H "Content-Type: application/json" -d '{
-    "name":"Loki",
-    "type":"loki",
-    "url":"http://loki:3100",
-    "access":"proxy",
-    "basicAuth":false
-}' http://admin:adminpassword@localhost:3000/api/datasources
-
-# Create SSH CA dashboard
-echo "Creating SSH CA dashboard..."
-curl -X POST -H "Content-Type: application/json" -d '{
-    "dashboard": {
-        "id": null,
-        "title": "SSH CA Audit Dashboard",
-        "tags": ["ssh", "vault", "audit"],
-        "timezone": "browser",
-        "panels": [
-            {
-                "id": 1,
-                "title": "Certificate Issuance",
-                "type": "table",
-                "datasource": "Loki",
-                "targets": [
-                    {
-                        "expr": "{job=\"ssh_cert_logs\"} |~ \"Certificate issued\"",
-                        "refId": "A"
-                    }
-                ],
-                "gridPos": {
-                    "h": 8,
-                    "w": 24,
-                    "x": 0,
-                    "y": 0
-                }
-            },
-            {
-                "id": 2,
-                "title": "SSH Logins",
-                "type": "table",
-                "datasource": "Loki",
-                "targets": [
-                    {
-                        "expr": "{job=\"ssh_auth_logs\"} |~ \"Accepted publickey\"",
-                        "refId": "A"
-                    }
-                ],
-                "gridPos": {
-                    "h": 8,
-                    "w": 24,
-                    "x": 0,
-                    "y": 8
-                }
-            },
-            {
-                "id": 3,
-                "title": "Failed Authentication Attempts",
-                "type": "table",
-                "datasource": "Loki",
-                "targets": [
-                    {
-                        "expr": "{job=\"ssh_auth_logs\"} |~ \"Failed\"",
-                        "refId": "A"
-                    }
-                ],
-                "gridPos": {
-                    "h": 8,
-                    "w": 24,
-                    "x": 0,
-                    "y": 16
-                }
-            }
-        ],
-        "schemaVersion": 16,
-        "version": 0
-    },
-    "folderId": 0,
-    "overwrite": false
-}' http://admin:adminpassword@localhost:3000/api/dashboards/db
+echo "=== Docker Container Status ==="
+docker ps -a
+echo ""
+echo "=== Grafana Status ==="
+curl -s http://localhost:3000/api/health | grep -q "ok" && echo "Grafana is running" || echo "Grafana is not running"
+echo ""
+echo "=== Loki Status ==="
+curl -s http://localhost:3100/ready | grep -q "ready" && echo "Loki is ready" || echo "Loki is not ready"
 EOF
 
-chmod +x /opt/setup-grafana.sh
-/opt/setup-grafana.sh &
+chmod +x /usr/local/bin/check-logging-status
 
-# Create a README file
-cat > /home/ubuntu/README.md << EOF
-# Loki + Grafana Logging for SSH CA
+echo "Logging setup complete!"
 
-This server hosts Loki and Grafana for centralized logging of the SSH CA infrastructure.
-
-## Accessing Grafana
-
-- URL: http://$(hostname -I | awk '{print $1}'):3000
-- Username: admin
-- Password: adminpassword
-
-## Dashboards
-
-- SSH CA Audit Dashboard: Shows certificate issuance and SSH login events
-
-## Log Sources
-
-- Vault Audit Logs
-- SSH Authentication Logs
-- SSH Certificate Issuance Logs
-
-## Adding More Log Sources
-
-To add more log sources, modify the Promtail configuration at:
-/opt/promtail/config/promtail-config.yaml
-EOF
-
-# Make sure README is owned by ubuntu user
-chown ubuntu:ubuntu /home/ubuntu/README.md
-
-# Install Promtail
-PROMTAIL_VERSION="2.8.0"
-wget -q -O /tmp/promtail.zip "https://github.com/grafana/loki/releases/download/v${PROMTAIL_VERSION}/promtail-linux-amd64.zip"
-unzip /tmp/promtail.zip -d /tmp
-mv /tmp/promtail-linux-amd64/promtail /usr/local/bin/
-chmod +x /usr/local/bin/promtail
-
-# Start Promtail
-promtail -config.file=/opt/promtail/config/promtail-config.yaml
+# Run status check
+/usr/local/bin/check-logging-status
