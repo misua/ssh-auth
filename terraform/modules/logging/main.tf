@@ -121,11 +121,4 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-# Output the private and public IPs
-output "private_ip" {
-  value = aws_instance.logging.private_ip
-}
-
-output "public_ip" {
-  value = aws_instance.logging.public_ip
-}
+# Output definitions moved to outputs.tf
