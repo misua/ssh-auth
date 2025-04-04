@@ -15,6 +15,7 @@ resource "aws_instance" "logging" {
   # User data script to set up Loki and Grafana
   user_data = templatefile("${path.module}/templates/logging_setup.sh.tpl", {
     COMPOSE_VERSION = "1.29.2"
+    PROMTAIL_VERSION = "2.8.0"
   })
 
   tags = {
