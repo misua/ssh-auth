@@ -29,6 +29,7 @@ resource "aws_security_group" "jumpbox" {
 
 # IAM role for jumpbox instances
 resource "aws_iam_role" "jumpbox" {
+  count = var.create_iam_resources ? 1 : 0
   name = "${var.name}-role"
 
   assume_role_policy = jsonencode({
@@ -43,16 +44,23 @@ resource "aws_iam_role" "jumpbox" {
       }
     ]
   })
+  
+  # Using lifecycle meta-argument for easier deletion
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # IAM instance profile for jumpbox instances
 resource "aws_iam_instance_profile" "jumpbox" {
+  count = var.create_iam_resources ? 1 : 0
   name = "${var.name}-instance-profile"
-  role = aws_iam_role.jumpbox.name
+  role = var.create_iam_resources ? aws_iam_role.jumpbox[0].name : "${var.name}-role"
 }
 
 # IAM policy for accessing SSM
 resource "aws_iam_policy" "ssm_access" {
+  count = var.create_iam_resources ? 1 : 0
   name        = "${var.name}-ssm-access"
   description = "Allow instances to access SSM"
 
@@ -76,8 +84,9 @@ resource "aws_iam_policy" "ssm_access" {
 
 # Attach SSM policy to role
 resource "aws_iam_role_policy_attachment" "ssm_policy_attach" {
-  role       = aws_iam_role.jumpbox.name
-  policy_arn = aws_iam_policy.ssm_access.arn
+  count      = var.create_iam_resources ? 1 : 0
+  role       = aws_iam_role.jumpbox[0].name
+  policy_arn = aws_iam_policy.ssm_access[0].arn
 }
 
 # Get latest Ubuntu AMI
@@ -104,7 +113,7 @@ resource "aws_instance" "jumpbox" {
   key_name               = var.key_name
   subnet_id              = element(var.subnet_ids, count.index % length(var.subnet_ids))
   vpc_security_group_ids = [aws_security_group.jumpbox.id]
-  iam_instance_profile   = aws_iam_instance_profile.jumpbox.name
+  iam_instance_profile   = var.create_iam_resources ? aws_iam_instance_profile.jumpbox[0].name : "${var.name}-instance-profile"
 
   root_block_device {
     volume_type           = "gp3"
@@ -117,6 +126,7 @@ resource "aws_instance" "jumpbox" {
       vault_ip         = var.vault_ip
       vault_ca_pub_key = var.vault_ca_pub_key
       environment      = var.environments[count.index]
+      logging_server_ip = var.logging_server_ip
     }),
     templatefile("${path.module}/templates/promtail_setup.sh.tpl", {
       logging_server_ip = var.logging_server_ip

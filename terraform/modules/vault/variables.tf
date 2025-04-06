@@ -34,3 +34,9 @@ variable "logging_server_ip" {
   description = "IP address of the Loki logging server"
   type        = string
 }
+
+variable "create_iam_resources" {
+  description = "Whether to create IAM resources or use existing ones"
+  type        = bool
+  default     = true
+}

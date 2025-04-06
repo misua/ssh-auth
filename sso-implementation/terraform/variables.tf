@@ -33,8 +33,14 @@ variable "environments" {
   default     = ["dev", "staging", "prod"]
 }
 
-variable "create_iam_resources" {
-  description = "Whether to create IAM resources or use existing ones"
+variable "enable_auto_unseal" {
+  description = "Whether to enable auto-unseal for Vault"
   type        = bool
   default     = true
+}
+
+variable "allowed_ssh_cidr" {
+  description = "CIDR blocks allowed to SSH to the jumpbox"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
 }

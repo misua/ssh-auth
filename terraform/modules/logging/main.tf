@@ -4,7 +4,7 @@ resource "aws_instance" "logging" {
   key_name               = var.key_name
   subnet_id              = var.subnet_ids[0]
   vpc_security_group_ids = [aws_security_group.logging.id]
-  iam_instance_profile   = aws_iam_instance_profile.logging.name
+  iam_instance_profile   = var.create_iam_resources ? aws_iam_instance_profile.logging[0].name : "${var.environment}-logging-instance-profile"
 
   root_block_device {
     volume_type           = "gp3"
@@ -21,6 +21,27 @@ resource "aws_instance" "logging" {
   tags = {
     Name = "${var.environment}-logging"
   }
+}
+
+# Add dedicated EBS volume for container data
+resource "aws_ebs_volume" "logging_data" {
+  availability_zone = "${data.aws_subnet.selected.availability_zone}"
+  size              = 20
+  type              = "gp3"
+  tags = {
+    Name = "${var.environment}-logging-data"
+  }
+}
+
+resource "aws_volume_attachment" "logging_data_attach" {
+  device_name = "/dev/sdh"
+  volume_id   = aws_ebs_volume.logging_data.id
+  instance_id = aws_instance.logging.id
+}
+
+# We need to get the subnet information for the availability zone
+data "aws_subnet" "selected" {
+  id = var.subnet_ids[0]
 }
 
 resource "aws_security_group" "logging" {
@@ -88,8 +109,10 @@ resource "aws_security_group" "logging" {
 
 # IAM role for logging instance
 resource "aws_iam_role" "logging" {
+  count = var.create_iam_resources ? 1 : 0
   name = "${var.environment}-logging-role"
-
+  # Using proper lifecycle meta-argument to handle force_destroy functionality
+  
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
@@ -102,11 +125,17 @@ resource "aws_iam_role" "logging" {
       }
     ]
   })
+  
+  # Using lifecycle meta-argument for easier deletion
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_iam_instance_profile" "logging" {
+  count = var.create_iam_resources ? 1 : 0
   name = "${var.environment}-logging-instance-profile"
-  role = aws_iam_role.logging.name
+  role = var.create_iam_resources ? aws_iam_role.logging[0].name : "${var.environment}-logging-role"
 }
 
 # Get latest Ubuntu AMI

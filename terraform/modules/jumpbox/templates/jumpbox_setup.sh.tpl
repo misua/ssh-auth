@@ -86,6 +86,37 @@ systemctl restart sshd
 # Add vault server to /etc/hosts
 echo "${vault_ip} vault.internal" >> /etc/hosts
 
+# Add logging server to /etc/hosts
+echo "${logging_server_ip} logging.internal" >> /etc/hosts
+
+# Ensure SSH key permissions are correct
+if [ -f "/home/ubuntu/.ssh/id_rsa" ]; then
+  chmod 600 /home/ubuntu/.ssh/id_rsa
+  chown ubuntu:ubuntu /home/ubuntu/.ssh/id_rsa
+fi
+
+# Create SSH config file for easier connections
+mkdir -p /home/ubuntu/.ssh
+cat > /home/ubuntu/.ssh/config << EOF
+Host vault
+  HostName vault.internal
+  User ubuntu
+  IdentityFile /home/ubuntu/.ssh/id_rsa
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+
+Host logging
+  HostName logging.internal
+  User ubuntu
+  IdentityFile /home/ubuntu/.ssh/id_rsa
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+EOF
+
+# Set proper permissions
+chmod 600 /home/ubuntu/.ssh/config
+chown ubuntu:ubuntu /home/ubuntu/.ssh/config
+
 # Install Vault client for testing
 curl -fsSL https://apt.releases.hashicorp.com/gpg | apt-key add -
 apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"

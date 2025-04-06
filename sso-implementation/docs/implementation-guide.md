@@ -128,7 +128,7 @@ vault policy write ssh-admin @config/ssh-admin-policy.hcl
 Run the configuration script on each jumpbox:
 
 ```bash
-ssh ec2-user@jumpbox-ip "sudo bash -s" < scripts/configure-jumpbox.sh
+ssh ec2-user@10.0.1.46 "sudo bash -s" < scripts/configure-jumpbox.sh
 ```
 
 This script:
@@ -171,7 +171,7 @@ Verify the implementation:
 
 2. **Test SSH Access**:
    ```bash
-   ssh ssh-developer@jumpbox-ip
+   ssh ssh-developer@10.0.1.46
    ```
 
 3. **Verify Audit Trail**:

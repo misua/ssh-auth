@@ -37,6 +37,7 @@ resource "aws_security_group" "vault" {
 
 # IAM role for Vault server
 resource "aws_iam_role" "vault" {
+  count = var.create_iam_resources ? 1 : 0
   name = "${var.name}-role"
 
   assume_role_policy = jsonencode({
@@ -51,12 +52,18 @@ resource "aws_iam_role" "vault" {
       }
     ]
   })
+  
+  # Using lifecycle meta-argument for easier deletion
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # IAM policy for CloudWatch logging
 resource "aws_iam_role_policy" "vault_cloudwatch" {
+  count  = var.create_iam_resources ? 1 : 0
   name   = "${var.name}-cloudwatch-policy"
-  role   = aws_iam_role.vault.id
+  role   = var.create_iam_resources ? aws_iam_role.vault[0].id : "${var.name}-role"
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
@@ -77,7 +84,7 @@ resource "aws_iam_role_policy" "vault_cloudwatch" {
 # IAM instance profile for Vault server
 resource "aws_iam_instance_profile" "vault" {
   name = "${var.name}-instance-profile"
-  role = aws_iam_role.vault.name
+  role = var.create_iam_resources ? aws_iam_role.vault[0].name : "${var.name}-role"
 }
 
 # Create Vault server

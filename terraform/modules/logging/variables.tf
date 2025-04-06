@@ -17,3 +17,9 @@ variable "key_name" {
   description = "SSH key name to use for the logging instance"
   type        = string
 }
+
+variable "create_iam_resources" {
+  description = "Whether to create IAM resources or use existing ones"
+  type        = bool
+  default     = true
+}

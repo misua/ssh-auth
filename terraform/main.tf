@@ -16,6 +16,7 @@ module "logging" {
   vpc_id       = module.vpc.vpc_id
   subnet_ids   = module.vpc.private_subnet_ids
   key_name     = var.ssh_key_name
+  create_iam_resources = true
 }
 
 # Set up local variable for logging server IP to avoid circular dependencies
@@ -25,30 +26,32 @@ locals {
 
 # Deploy Vault server
 module "vault" {
-  source          = "./modules/vault"
-  name            = "${var.environment_name}-vault"
-  vpc_id          = module.vpc.vpc_id
-  subnet_ids      = module.vpc.private_subnet_ids
-  instance_type   = var.vault_instance_type
-  key_name        = var.ssh_key_name
-  environments    = var.environments
-  logging_server_ip = local.logging_server_ip
+  source             = "./modules/vault"
+  name               = "${var.environment_name}-vault"
+  vpc_id             = module.vpc.vpc_id
+  subnet_ids         = module.vpc.private_subnet_ids
+  instance_type      = var.vault_instance_type
+  key_name           = var.ssh_key_name
+  environments       = var.environments
+  logging_server_ip  = local.logging_server_ip
+  create_iam_resources = var.create_iam_resources
   
   depends_on = [module.logging]
 }
 
 # Deploy jumpbox hosts
 module "jumpbox" {
-  source             = "./modules/jumpbox"
-  name               = "${var.environment_name}-jumpbox"
-  vpc_id             = module.vpc.vpc_id
-  subnet_ids         = module.vpc.public_subnet_ids
-  instance_type      = var.jumpbox_instance_type
-  key_name           = var.ssh_key_name
+  source       = "./modules/jumpbox"
+  name         = "${var.environment_name}-jumpbox"
+  vpc_id       = module.vpc.vpc_id
+  subnet_ids   = module.vpc.public_subnet_ids
+  instance_type = var.jumpbox_instance_type
+  key_name     = var.ssh_key_name
+  environments = var.environments
   vault_ip           = module.vault.private_ip
   vault_ca_pub_key   = module.vault.ssh_ca_public_key
-  environments       = var.environments
   logging_server_ip  = local.logging_server_ip
+  create_iam_resources = var.create_iam_resources
   
   depends_on = [module.logging, module.vault]
 }
