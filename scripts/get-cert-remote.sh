@@ -4,7 +4,7 @@
 set -e
 
 # Default configuration
-JUMPBOX_IP=""
+JUMPBOX_IP="34.230.17.248"
 SSH_KEY_PATH="$HOME/.ssh/id_rsa"
 SSH_PUB_KEY="${SSH_KEY_PATH}.pub"
 JUMPBOX_KEY_PATH=""
@@ -110,7 +110,7 @@ $(cat $SSH_PUB_KEY)
 PUBKEY
 
 # Set Vault address
-export VAULT_ADDR="http://10.0.10.88:8200"
+export VAULT_ADDR="http://10.0.10.30:8200"
 
 # Login to Vault
 echo "Authenticating to Vault..."

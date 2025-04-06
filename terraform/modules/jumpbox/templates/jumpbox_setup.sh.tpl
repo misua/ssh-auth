@@ -3,7 +3,15 @@ set -e
 
 # Install necessary packages
 apt-get update
-apt-get install -y curl jq unzip
+apt-get install -y curl jq unzip wget
+
+# Install HashiCorp Vault directly from binary
+echo "Installing HashiCorp Vault..."
+wget -O vault.zip https://releases.hashicorp.com/vault/1.15.2/vault_1.15.2_linux_amd64.zip
+unzip -o vault.zip
+mv vault /usr/local/bin/
+chmod +x /usr/local/bin/vault
+rm vault.zip
 
 # Install CloudWatch agent for centralized logging
 apt-get install -y amazon-cloudwatch-agent
@@ -118,10 +126,8 @@ chmod 600 /home/ubuntu/.ssh/config
 chown ubuntu:ubuntu /home/ubuntu/.ssh/config
 
 # Install Vault client for testing
-curl -fsSL https://apt.releases.hashicorp.com/gpg | apt-key add -
-apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
-apt-get update
-apt-get install -y vault
+# Note: We already installed Vault at the beginning of the script, so this is redundant
+# Keeping this comment as a reminder that Vault is already installed
 
 # Create a helper script for users to obtain certificates
 cat > /usr/local/bin/get-ssh-cert << 'EOF'
@@ -129,7 +135,7 @@ cat > /usr/local/bin/get-ssh-cert << 'EOF'
 set -e
 
 # Default values
-VAULT_ADDR="http://vault.internal:8200"
+VAULT_ADDR="http://${vault_ip}:8200"
 ROLE="${environment}"
 TTL="24h"
 
@@ -153,10 +159,10 @@ read -s VAULT_PASS
 # Get token from Vault
 TOKEN=$$(curl -s \
     --request POST \
-    --data "{\\"password\\": \\"$VAULT_PASS\\"}" \
-    $VAULT_ADDR/v1/auth/userpass/login/$VAULT_USER | jq -r '.auth.client_token')
+    --data "{\\"username\\":\\"\$VAULT_USER\\",\\"password\\":\\"\$VAULT_PASS\\"}" \
+    $VAULT_ADDR/v1/auth/userpass/login/\$VAULT_USER | jq -r '.auth.client_token')
 
-if [ "$TOKEN" = "null" ]; then
+if [ -z "$$TOKEN" ] || [ "$$TOKEN" = "null" ]; then
     echo "Authentication failed!"
     exit 1
 fi
@@ -169,10 +175,10 @@ SSH_PUB_KEY_CONTENT=$$(cat $SSH_PUB_KEY)
 # Sign the public key
 echo "Signing your SSH key..."
 SIGN_RESULT=$$(curl -s \
-    --header "X-Vault-Token: $TOKEN" \
+    --header "X-Vault-Token: $$TOKEN" \
     --request POST \
     --data "{
-        \\"public_key\\": \\"$SSH_PUB_KEY_CONTENT\\",
+        \\"public_key\\": \\"$$SSH_PUB_KEY_CONTENT\\",
         \\"valid_principals\\": \\"${environment}-admin\\",
         \\"ttl\\": \\"$TTL\\"
     }" \

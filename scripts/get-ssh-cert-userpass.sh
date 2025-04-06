@@ -7,7 +7,7 @@ set -e
 CURRENT_VAULT_ADDR=$(env | grep VAULT_ADDR | cut -d= -f2)
 
 # Default configuration
-VAULT_ADDR=${CURRENT_VAULT_ADDR:-"http://10.0.10.88:8200"}
+VAULT_ADDR=${CURRENT_VAULT_ADDR:-"http://10.0.10.115:8200"}
 SSH_KEY_PATH=${SSH_KEY_PATH:-"$HOME/.ssh/id_rsa"}
 SSH_CERT_PATH="${SSH_KEY_PATH}-cert.pub"
 ENVIRONMENT=${ENVIRONMENT:-"prod"}
